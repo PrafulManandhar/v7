@@ -1,117 +1,49 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const graphqlHttp = require('express-graphql');
-const { buildSchema } = require('graphql');
 const mongoose = require('mongoose');
-const bcryptjs = require('bcryptjs');
-const Event = require('./models/event');
-const User  = require('./models/user');
+
+const graphQlSchema = require('./graphql/schema/index');
+const graphQlResolvers = require('./graphql/resolvers/index');
+const isAuth = require('./middleware/is-auth');
 
 const app = express();
 
 app.use(bodyParser.json());
 
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST,GET,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
+app.use(isAuth);
+
 app.use(
   '/graphql',
   graphqlHttp({
-    schema: buildSchema(`
-        type Event {
-          _id: ID!
-          title: String!
-          description: String!
-          price: Float!
-          date: String!
-        }
-
-        type User {
-          _id: ID!
-          email: String!
-          password: String!
-        }
-
-        input EventInput {
-          title: String!
-          description: String!
-          price: Float!
-          date: String!
-        }
-
-        input UserInput {
-          email: String!
-          password: String!
-        }
-
-        type RootQuery {
-            events: [Event!]!
-        }
-        
-        type RootMutation {
-            createEvent(eventInput: EventInput): Event
-            createUser(userInput: UserInput): User
-        }
-        schema {
-            query: RootQuery
-            mutation: RootMutation
-        }
-    `),
-    rootValue: {
-      events: () => {
-        return Event.find()
-          .then(events => {
-            return events.map(event => {
-              return { ...event._doc, _id: event.id };
-            });
-          })
-          .catch(err => {
-            throw err;
-          });
-      },
-      createEvent: args => {
-        const event = new Event({
-          title: args.eventInput.title,
-          description: args.eventInput.description,
-          price: +args.eventInput.price,
-          date: new Date(args.eventInput.date)
-        });
-        return event
-          .save()
-          .then(result => {
-            console.log(result);
-            return { ...result._doc, _id: result._doc._id.toString() };
-          })
-          .catch(err => {
-            console.log(err);
-            throw err;
-          });
-      },
-      createUser: args =>{
-       return bcryptjs.hash(args.userInput.password, 12)
-        .then(hashPassword =>{
-          const user = new User({
-            email: args.userInput.email,
-            password: hashPassword
-          })
-          return user.save();
-        })
-        .then(result =>{
-          console.log(result)
-          return { ...result._doc,_id: result.id};
-        }).catch(err => {throw err});
-      }
-    },
-    graphiql: true
+    schema: graphQlSchema,
+    rootValue: graphQlResolvers,
+    graphiql: true,
   })
 );
 
+const dbName = 'event-booking';
+const dbUser = 'sushantdsuwal';
+const dbPassword = 'Password@123';
+
+const MONGODB_URI = `mongodb+srv://sushantdsuwal:${dbPassword}@atlascluster.92exn.mongodb.net/${dbName}?retryWrites=true&w=majority`;
+
 mongoose
-  .connect(
-    `mongodb+srv://${process.env.MONGO_USER}:${
-  process.env.MONGO_PASSWORD
-  }@events-booking-b34s2.mongodb.net/${process.env.MONGO_DB}?retryWrites=true&w=majority`
-  )
+  .connect(MONGODB_URI, { useNewUrlParser: true })
   .then(() => {
-    app.listen(3000);
+    console.log('Connected to database!');
+    app.listen(8000);
   })
-  .catch(err => {
-    console.log(err);
+  .catch((err) => {
+    console.log('failed to connect to database!', err);
   });
